@@ -1,0 +1,148 @@
+# NativX INFINITY - Docker Compose Configuration
+# Complete production-ready service orchestration
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: NativX_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-NativX}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-NativX_secret_2024}
+      POSTGRES_DB: ${POSTGRES_DB:-NativX}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-NativX}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - NativX_network
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: NativX_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - NativX_network
+
+  # FastAPI Backend
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: NativX_web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-NativX}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-NativX_secret_2024}
+      - POSTGRES_DB=${POSTGRES_DB:-NativX}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-NativX}:${POSTGRES_PASSWORD:-NativX_secret_2024}@db:5432/${POSTGRES_DB:-NativX}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - .:/app
+      - ./downloads:/app/downloads
+      - ./builds:/app/builds
+      - ./logs:/app/logs
+    ports:
+      - "8088:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - NativX_network
+
+  # Celery Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: NativX_worker
+    restart: unless-stopped
+    command: celery -A backend.worker worker --loglevel=info --concurrency=2
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-NativX}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-NativX_secret_2024}
+      - POSTGRES_DB=${POSTGRES_DB:-NativX}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-NativX}:${POSTGRES_PASSWORD:-NativX_secret_2024}@db:5432/${POSTGRES_DB:-NativX}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - .:/app
+      - ./downloads:/app/downloads
+      - ./builds:/app/builds
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_started
+    networks:
+      - NativX_network
+
+  # Next.js Frontend
+  frontend:
+    image: node:20-alpine
+    container_name: NativX_frontend
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm install && npm run build && npm start"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "3088:3000"
+    networks:
+      - NativX_network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: NativX_nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./downloads:/app/downloads:ro
+    ports:
+      - "8086:80"
+    depends_on:
+      - web
+      - frontend
+    networks:
+      - NativX_network
+
+volumes:
+  postgres_data:
+  redis_data:
+  frontend_node_modules:
+
+
+networks:
+  NativX_network:
+    driver: bridge

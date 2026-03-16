@@ -1,0 +1,36 @@
+#!/bin/bash
+# Gradle Wrapper script for AppWeaver builds
+
+# Determine the Java command to use
+if [ -n "$JAVA_HOME" ] ; then
+    JAVACMD="$JAVA_HOME/bin/java"
+else
+    JAVACMD="java"
+fi
+
+# Use gradle from system if available
+if command -v gradle &> /dev/null; then
+    exec gradle "$@"
+fi
+
+# Fallback to direct invocation
+GRADLE_VERSION="8.5"
+GRADLE_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+GRADLE_WRAPPER_JAR="$GRADLE_HOME/wrapper/dists/gradle-$GRADLE_VERSION-bin/gradle-$GRADLE_VERSION/lib/gradle-launcher-$GRADLE_VERSION.jar"
+
+if [ -f "$GRADLE_WRAPPER_JAR" ]; then
+    exec "$JAVACMD" -jar "$GRADLE_WRAPPER_JAR" "$@"
+fi
+
+# If no local gradle, download and run
+echo "Downloading Gradle $GRADLE_VERSION..."
+GRADLE_URL="https://services.gradle.org/distributions/gradle-$GRADLE_VERSION-bin.zip"
+GRADLE_ZIP="/tmp/gradle-$GRADLE_VERSION.zip"
+GRADLE_DIR="/tmp/gradle-$GRADLE_VERSION"
+
+if [ ! -d "$GRADLE_DIR" ]; then
+    curl -sL "$GRADLE_URL" -o "$GRADLE_ZIP"
+    unzip -q "$GRADLE_ZIP" -d /tmp
+fi
+
+exec "$GRADLE_DIR/bin/gradle" "$@"

@@ -1,0 +1,182 @@
+# NativX INFINITY - iOS Headless Build Workflow
+# Builds iOS app using GitHub Actions runners
+
+name: Build iOS App
+
+on:
+  push:
+    branches:
+      - 'build-*'
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'App Name'
+        required: true
+        default: 'NativX App'
+      bundle_id:
+        description: 'Bundle ID'
+        required: true
+        default: 'com.NativX.app'
+
+env:
+  APP_NAME: ${{ github.event.inputs.app_name || '{{APP_NAME}}' }}
+  BUNDLE_ID: ${{ github.event.inputs.bundle_id || '{{BUNDLE_ID}}' }}
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+          
+      - name: Read build config
+        id: config
+        run: |
+          if [ -f "build_config.json" ]; then
+            APP_NAME=$(cat build_config.json | jq -r '.app_name // "NativX App"')
+            BUNDLE_ID=$(cat build_config.json | jq -r '.bundle_id // "com.NativX.app"')
+            VERSION=$(cat build_config.json | jq -r '.version // "1.0.0"')
+            BUILD_NUMBER=$(cat build_config.json | jq -r '.build_number // "1"')
+            
+            echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+            echo "bundle_id=$BUNDLE_ID" >> $GITHUB_OUTPUT
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Create Xcode project
+        run: |
+          mkdir -p "${{ steps.config.outputs.app_name || env.APP_NAME }}"
+          cd "${{ steps.config.outputs.app_name || env.APP_NAME }}"
+          
+          # Create project structure
+          mkdir -p Sources
+          mkdir -p Resources
+          
+          # Copy Swift files
+          cp ../NativX/*.swift Sources/ 2>/dev/null || cp ../*.swift Sources/ 2>/dev/null || true
+          
+          # Create App entry point
+          cat > Sources/App.swift << 'EOF'
+          import SwiftUI
+          
+          @main
+          struct NativXApp: App {
+              var body: some Scene {
+                  WindowGroup {
+                      ContentView()
+                  }
+              }
+          }
+          EOF
+          
+          # Create Package.swift for SPM
+          cat > Package.swift << EOF
+          // swift-tools-version:5.9
+          import PackageDescription
+          
+          let package = Package(
+              name: "${{ steps.config.outputs.app_name || env.APP_NAME }}",
+              platforms: [.iOS(.v15)],
+              products: [
+                  .library(name: "${{ steps.config.outputs.app_name || env.APP_NAME }}", targets: ["${{ steps.config.outputs.app_name || env.APP_NAME }}"])
+              ],
+              targets: [
+                  .target(name: "${{ steps.config.outputs.app_name || env.APP_NAME }}", path: "Sources")
+              ]
+          )
+          EOF
+          
+      - name: Generate Xcode project
+        run: |
+          cd "${{ steps.config.outputs.app_name || env.APP_NAME }}"
+          
+          # Create project.yml for xcodegen
+          cat > project.yml << EOF
+          name: ${{ steps.config.outputs.app_name || env.APP_NAME }}
+          options:
+            bundleIdPrefix: ${{ steps.config.outputs.bundle_id || env.BUNDLE_ID }}
+            deploymentTarget:
+              iOS: "15.0"
+          settings:
+            DEVELOPMENT_TEAM: ""
+            CODE_SIGN_IDENTITY: ""
+            CODE_SIGNING_REQUIRED: "NO"
+            CODE_SIGNING_ALLOWED: "NO"
+          targets:
+            ${{ steps.config.outputs.app_name || env.APP_NAME }}:
+              type: application
+              platform: iOS
+              sources:
+                - Sources
+              settings:
+                PRODUCT_BUNDLE_IDENTIFIER: ${{ steps.config.outputs.bundle_id || env.BUNDLE_ID }}
+                MARKETING_VERSION: ${{ steps.config.outputs.version || '1.0.0' }}
+                CURRENT_PROJECT_VERSION: ${{ steps.config.outputs.build_number || '1' }}
+                INFOPLIST_FILE: ""
+                GENERATE_INFOPLIST_FILE: YES
+                INFOPLIST_KEY_CFBundleDisplayName: "${{ steps.config.outputs.app_name || env.APP_NAME }}"
+                INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+                INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+                INFOPLIST_KEY_UILaunchScreen_Generation: YES
+                INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+                INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+                SWIFT_VERSION: "5.0"
+                TARGETED_DEVICE_FAMILY: "1,2"
+          EOF
+          
+          # Install xcodegen
+          brew install xcodegen
+          
+          # Generate project
+          xcodegen generate
+          
+      - name: Build iOS App
+        run: |
+          cd "${{ steps.config.outputs.app_name || env.APP_NAME }}"
+          
+          # Build for generic iOS device (unsigned)
+          xcodebuild \
+            -project "${{ steps.config.outputs.app_name || env.APP_NAME }}.xcodeproj" \
+            -scheme "${{ steps.config.outputs.app_name || env.APP_NAME }}" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/app.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
+            
+      - name: Create IPA
+        run: |
+          cd "${{ steps.config.outputs.app_name || env.APP_NAME }}"
+          
+          # Create IPA from archive
+          mkdir -p build/Payload
+          cp -r build/app.xcarchive/Products/Applications/*.app build/Payload/
+          cd build
+          zip -r app.ipa Payload
+          
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: ${{ steps.config.outputs.app_name || env.APP_NAME }}/build/app.ipa
+          retention-days: 7
+          
+      - name: Build Summary
+        run: |
+          echo "## iOS Build Complete! :white_check_mark:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**App Name:** ${{ steps.config.outputs.app_name || env.APP_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Bundle ID:** ${{ steps.config.outputs.bundle_id || env.BUNDLE_ID }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.config.outputs.version || '1.0.0' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the IPA from the Artifacts section below." >> $GITHUB_STEP_SUMMARY

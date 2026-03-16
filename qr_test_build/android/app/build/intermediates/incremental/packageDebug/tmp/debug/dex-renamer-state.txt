@@ -1,0 +1,13 @@
+#Sat Mar 14 07:37:29 EET 2026
+path.3=7/classes.dex
+path.2=1/classes.dex
+path.1=0/classes.dex
+path.0=classes.dex
+base.3=E\:\\nativx good\\nativx-49c472a06a0acc5a1f3099df453e7638868cdaa1\\qr_test_build\\android\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\7\\classes.dex
+base.2=E\:\\nativx good\\nativx-49c472a06a0acc5a1f3099df453e7638868cdaa1\\qr_test_build\\android\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\1\\classes.dex
+base.1=E\:\\nativx good\\nativx-49c472a06a0acc5a1f3099df453e7638868cdaa1\\qr_test_build\\android\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
+base.0=E\:\\nativx good\\nativx-49c472a06a0acc5a1f3099df453e7638868cdaa1\\qr_test_build\\android\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes.dex
+renamed.3=classes4.dex
+renamed.2=classes3.dex
+renamed.1=classes2.dex
+renamed.0=classes.dex

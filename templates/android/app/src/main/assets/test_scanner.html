@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NativX QR Scanner Test</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; padding: 20px; background: #121212; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .logo { font-size: 24px; font-weight: bold; margin-bottom: 30px; color: #10b981; }
+        .btn { background: #10b981; color: white; border: none; padding: 16px 32px; font-size: 18px; border-radius: 12px; font-weight: bold; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4); cursor: pointer; transition: transform 0.2s; -webkit-tap-highlight-color: transparent; }
+        .btn:active { transform: scale(0.95); }
+        .result-box { margin-top: 40px; padding: 20px; background: #1e1e1e; border-radius: 12px; width: 100%; max-width: 300px; min-height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid #333; word-break: break-all; }
+        .result-label { color: #888; font-size: 14px; margin-bottom: 10px; }
+        .result-value { font-size: 16px; font-weight: 500; color: #fff; }
+    </style>
+</head>
+<body>
+
+    <div class="logo">NativX Scanner Engine</div>
+    
+    <button class="btn" onclick="startScanner()">SCAN QR CODE</button>
+    
+    <div class="result-box">
+        <div class="result-label">Scanned Data:</div>
+        <div class="result-value" id="result-text">Waiting...</div>
+    </div>
+
+    <script>
+        function startScanner() {
+            if (window.NativX) {
+                // Vibrate for feedback
+                if(window.NativX.vibrate) window.NativX.vibrate("medium");
+                
+                // Open Scanner
+                window.NativX.scanQrCode("onQrResult");
+                document.getElementById('result-text').innerText = "Opening camera...";
+                document.getElementById('result-text').style.color = "#888";
+            } else {
+                alert("NativX Engine is not active. This only works inside the native app.");
+            }
+        }
+
+        // Must be in global scope
+        function onQrResult(success, data) {
+            const resultEl = document.getElementById('result-text');
+            if (success && data) {
+                // Vibrate success
+                if(window.NativX.vibrate) window.NativX.vibrate("success");
+                
+                resultEl.innerText = data;
+                resultEl.style.color = "#10b981"; // Green
+            } else {
+                resultEl.innerText = "Scanning Cancelled";
+                resultEl.style.color = "#ef4444"; // Red
+            }
+        }
+    </script>
+</body>
+</html>
