@@ -44,21 +44,13 @@ app = FastAPI(
     openapi_url=None if IS_PRODUCTION else "/api/openapi.json"
 )
 
-# CORS configuration - Restricted to specific origins
-ALLOWED_ORIGINS = [
-    "https://nativx.app",
-    "https://www.nativx.app",
-    "http://localhost:3000",      # Local Next.js dev
-    "http://localhost:8086",      # Local nginx/docker
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:8086",
-]
-
+# In intranet/local mode, we allow all origins to avoid "Failed to fetch" errors
+# when the server IP address is unknown or dynamic.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
