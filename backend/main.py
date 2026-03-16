@@ -23,6 +23,10 @@ from sqlalchemy.orm import Session
 from backend.database import get_db, engine, Base
 from backend.models import Project, User, BuildStatus, Platform
 from backend.worker import build_app_task
+from backend.auth import (
+    verify_password, get_password_hash, create_access_token, 
+    decode_access_token, SECRET_KEY
+)
 
 # Initialize database tables
 Base.metadata.create_all(bind=engine)
@@ -130,55 +134,38 @@ security = HTTPBearer()
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)):
-    """Verify Supabase JWT token"""
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Security(security),
+    db: Session = Depends(get_db)
+):
+    """Verify local JWT token"""
     token = credentials.credentials
     
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        # If keys are missing (dev mode), warn but allow if in dev environment
-        if not IS_PRODUCTION:
-             print("WARNING: Supabase keys missing, skipping auth verification (DEV MODE)")
-             return {"id": "dev-user", "email": "dev@nativx.app", "aud": "authenticated"}
-        else:
-             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Server authentication misconfiguration"
-            )
-
-    try:
-        # Verify token by calling Supabase Auth API
-        # Using run_in_executor to avoid blocking the event loop
-        import asyncio
-        loop = asyncio.get_event_loop()
-        
-        def verify_token():
-            return requests.get(
-                f"{SUPABASE_URL}/auth/v1/user",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "apikey": SUPABASE_ANON_KEY
-                }
-            )
-            
-        response = await loop.run_in_executor(None, verify_token)
-        
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-            
-        return response.json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Auth Error: {e}")
+    payload = decode_access_token(token)
+    if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed",
+            detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing user identity",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    return {"id": str(user.id), "email": user.email, "tier": user.subscription_tier}
 
 
 # ============================================
@@ -252,9 +239,79 @@ class ProjectStatus(BaseModel):
     updated_at: str
 
 
+class LoginRequest(BaseModel):
+    """Request model for login"""
+    email: EmailStr
+    password: str
+
+class SignupRequest(BaseModel):
+    """Request model for signup"""
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = None
+
 # ============================================
 # API ENDPOINTS
 # ============================================
+
+@app.post("/api/auth/signup")
+async def signup(request: SignupRequest, db: Session = Depends(get_db)):
+    """Register a new user"""
+    # Check if user already exists
+    existing_user = db.query(User).filter(User.email == request.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create new user
+    new_user = User(
+        email=request.email,
+        hashed_password=get_password_hash(request.password),
+        full_name=request.full_name,
+        subscription_tier="free",
+        is_active=True,
+        is_verified=True  # Bypass email verification for local/intranet use
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    # Create token
+    access_token = create_access_token(data={"sub": str(new_user.id)})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": str(new_user.id),
+            "email": new_user.email,
+            "full_name": new_user.full_name
+        }
+    }
+
+@app.post("/api/auth/login")
+async def login(request: LoginRequest, db: Session = Depends(get_db)):
+    """Authenticate a user"""
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user or not verify_password(request.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Create token
+    access_token = create_access_token(data={"sub": str(user.id)})
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name
+        }
+    }
 
 @app.get("/api/health")
 async def health_check():

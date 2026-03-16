@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { ArrowRight, Lock, Mail, Loader2, LogIn } from 'lucide-react';
 import AuthLayout from '../../components/AuthLayout';
-import { supabase } from '@/lib/supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -20,13 +20,9 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-            const { error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
-
-            if (error) throw error;
+            await apiClient.login(email, password);
             router.push('/build');
+            window.location.reload(); // Force full reload to update auth state
         } catch (error: any) {
             toastError(error.message);
         } finally {

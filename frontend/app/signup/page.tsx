@@ -4,31 +4,28 @@ import React from 'react';
 import Link from 'next/link';
 import { ArrowRight, Lock, Mail, User, Check } from 'lucide-react';
 import AuthLayout from '../../components/AuthLayout';
-import { supabase } from '@/lib/supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 import { useAuth } from '@/components/AuthProvider';
 import { useToast } from '@/components/ui/ToastProvider';
+import { useRouter } from 'next/navigation';
 
 export default function SignupPage() {
-    const { signInWithEmail } = useAuth();
-    const { toast, error: toastError, success } = useToast();
+    const { success, error: toastError } = useToast();
     const [loading, setLoading] = React.useState(false);
     const [email, setEmail] = React.useState('');
     const [password, setPassword] = React.useState('');
+    const [fullName, setFullName] = React.useState('');
+    const router = useRouter();
 
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        // Note: For simplicity, we are using the Magic Link / OTP flow for now
-        // or standard email/password if configured.
-        // Here we'll just simulate/call the AuthProvider logic.
 
         try {
-            const { error } = await supabase.auth.signUp({
-                email,
-                password,
-            });
-            if (error) throw error;
-            success('Check your email for the confirmation link!');
+            await apiClient.signup(email, password, fullName);
+            success('Account created successfully!');
+            router.push('/build');
+            window.location.reload(); 
         } catch (error: any) {
             toastError(error.message);
         } finally {
@@ -49,6 +46,8 @@ export default function SignupPage() {
                         <input
                             id="fullName"
                             type="text"
+                            value={fullName}
+                            onChange={(e) => setFullName(e.target.value)}
                             className="w-full bg-black/50 border border-white/10 rounded-xl px-12 py-3 text-white placeholder:text-zinc-500 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/50 transition-all"
                             placeholder="John Doe"
                         />

@@ -6,7 +6,7 @@ import { Zap, Upload, Check, AlertCircle, Loader2, Apple, Smartphone, Bell, Shop
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
 import { useRouter } from 'next/navigation';
-import { SubscriptionTier, supabase } from '@/lib/supabaseClient';
+import { apiClient } from '@/lib/apiClient';
 
 // --- VISUAL ASSETS ---
 const Aurora = ({ color, position }: { color: string, position: string }) => (
@@ -41,7 +41,7 @@ export default function BuildPage() {
         setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-8));
     };
 
-    const { user, profile, isLoading, session } = useAuth();
+    const { user, profile, isLoading } = useAuth();
     const router = useRouter();
 
     useEffect(() => {
@@ -53,35 +53,7 @@ export default function BuildPage() {
     const startBuild = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!profile || !session) return;
-
-        // 1. Check & Deduct Credits Atomically via RPC
-        // ... (lines 43-66 remain the same) 
-        // Note: RPC call manages its own auth via Supabase client, no change needed there unless custom logic.
-        // Actually, supabase client uses the session automatically.
-
-        try {
-            addLog(`Authorizing request with NativX Core...`);
-            const { data: success, error: rpcError } = await supabase.rpc('consume_credit');
-
-            if (rpcError) throw rpcError;
-
-            if (!success) {
-                setStatus('error');
-                addLog(`CRITICAL: Transaction Rejected.`);
-                addLog(`Reason: Insufficient Build Credits.`);
-                addLog(`Current Balance: ${profile.credits}`);
-                return;
-            }
-
-            // Credits deducted successfully, local update to reflect changes immediately
-            addLog(`Transaction Approved. (-1 Credit)`);
-
-        } catch (err: any) {
-            addLog(`Authorization Error: ${err.message}`);
-            setStatus('error');
-            return;
-        }
+        if (!user) return;
 
         setIsBuilding(true);
         setStatus('initializing');
@@ -98,7 +70,7 @@ export default function BuildPage() {
             formData.append('platform', platform);
             formData.append('primary_color', '#6366F1');
             formData.append('secondary_color', '#8B5CF6');
-            formData.append('tier', profile?.tier || 'free'); // Send user tier for source code eligibility
+            formData.append('tier', profile?.tier || 'free'); 
             
             // Append advanced options if they exist
             if(onesignalId) formData.append('onesignal_app_id', onesignalId);
@@ -121,21 +93,12 @@ export default function BuildPage() {
                 addLog('Icon file attached.');
             }
 
-            // Call the Backend API
-            const response = await fetch('/api/build/with-icon', {
+            // Call the Backend API via apiClient
+            const data = await apiClient.request('/api/build/with-icon', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.access_token}`,
-                },
-                body: formData, // Auto-sets Content-Type to multipart/form-data
+                body: formData,
             });
 
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.detail || 'Failed to start build');
-            }
-
-            const data = await response.json();
             const projectId = data.project_id;
             addLog(`Build initialized. ID: ${projectId}`);
             setStatus('building');
@@ -143,14 +106,7 @@ export default function BuildPage() {
             // Start Polling via recursive function or interval
             const pollStatus = async () => {
                 try {
-                    const statusRes = await fetch(`/api/build/${projectId}`, {
-                        headers: {
-                            'Authorization': `Bearer ${session.access_token}`,
-                        },
-                    });
-                    if (!statusRes.ok) throw new Error('Failed to fetch status');
-
-                    const statusData = await statusRes.json();
+                    const statusData = await apiClient.request(`/api/build/${projectId}`);
 
                     if (statusData.status === 'queued') {
                         addLog('Build queued in worker pool...');
@@ -158,17 +114,10 @@ export default function BuildPage() {
                     } else if (statusData.status === 'building') {
                         // Fetch real logs from server
                         try {
-                            const logsRes = await fetch(`/api/build/${projectId}/logs`, {
-                                headers: { 'Authorization': `Bearer ${session.access_token}` },
-                            });
-                            if (logsRes.ok) {
-                                const logsData = await logsRes.json();
-                                const logLines = (logsData.logs || '').split('\n').filter((l: string) => l.trim());
-                                const lastLog = logLines[logLines.length - 1] || 'Compiling...';
-                                addLog(lastLog.substring(0, 80)); // Truncate long lines
-                            } else {
-                                addLog('Engine is compiling artifacts...');
-                            }
+                            const logsData = await apiClient.request(`/api/build/${projectId}/logs`);
+                            const logLines = (logsData.logs || '').split('\n').filter((l: string) => l.trim());
+                            const lastLog = logLines[logLines.length - 1] || 'Compiling...';
+                            addLog(lastLog.substring(0, 80)); // Truncate long lines
                         } catch {
                             addLog('Engine is compiling artifacts...');
                         }
@@ -209,11 +158,11 @@ export default function BuildPage() {
 
     // Authenticated download function
     const handleDownload = async (url: string, filename: string) => {
-        if (!session) return;
         try {
+            const token = apiClient.getToken();
             const response = await fetch(url, {
                 headers: {
-                    'Authorization': `Bearer ${session.access_token}`,
+                    'Authorization': `Bearer ${token}`,
                 },
             });
             if (!response.ok) throw new Error('Download failed');

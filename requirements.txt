@@ -18,8 +18,9 @@ python-multipart==0.0.9
 python-magic==0.4.27
 Pillow==10.2.0
 
-# Payment Processing
-stripe==8.2.0
+# Security & Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
 
 # HTTP Clients & GitHub Integration
 requests==2.31.0
