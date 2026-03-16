@@ -2,27 +2,35 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional, Any, Union
 from jose import jwt
-from passlib.context import CryptContext
+import bcrypt
 
 # Configuration
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "7b0a32491a921d8b6c4e5f7a0b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Check if the provided password matches the stored hash"""
     try:
-        if not hashed_password:
+        if not hashed_password or not plain_password:
             return False
-        return pwd_context.verify(plain_password, hashed_password)
-    except Exception:
+        # bcrypt requires bytes
+        password_bytes = plain_password.encode('utf-8')
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
+    except Exception as e:
+        print(f"Error verifying password: {e}")
         return False
 
 def get_password_hash(password: str) -> str:
     """Hash a password for storing"""
-    return pwd_context.hash(password)
+    # bcrypt requires bytes
+    password_bytes = password.encode('utf-8')
+    # Generate salt and hash
+    salt = bcrypt.gensalt()
+    hashed_bytes = bcrypt.hashpw(password_bytes, salt)
+    # Return as string for database
+    return hashed_bytes.decode('utf-8')
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Create a new JWT access token"""
