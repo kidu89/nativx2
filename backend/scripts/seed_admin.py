@@ -2,10 +2,13 @@
 import os
 import uuid
 import sys
-from sqlalchemy.orm import Session
 
-# Add the current directory to sys.path so we can import from backend
-sys.path.append(os.getcwd())
+# Add the project root to sys.path
+# This script is in backend/scripts/seed_admin.py
+# So project root is two levels up
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+sys.path.append(project_root)
 
 from backend.database import SessionLocal, engine
 from backend.models import User, Base
