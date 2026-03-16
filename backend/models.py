@@ -42,7 +42,6 @@ class User(Base):
     company = Column(String(255), nullable=True)
     
     # Subscription info
-    stripe_customer_id = Column(String(255), nullable=True)
     subscription_tier = Column(String(50), default="free")
     builds_remaining = Column(Integer, default=5)
     
